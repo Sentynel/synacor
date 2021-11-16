@@ -1,15 +1,36 @@
 import std/math
 
 type
+  Vnum = distinct uint16
+  Regidx = distinct uint16
   Mem = array[2^15, uint16]
+  Reg = array[8, Vnum]
   Op = enum
-    Halt = 0, Set = 1, Jmp = 6, Jt = 7, Jf = 8, Out = 19, Noop = 21
+    Halt = 0, Set = 1, Jmp = 6, Jt = 7, Jf = 8, Add = 9, Out = 19, Noop = 21
   VM = ref object
     mem: Mem
-    ip: uint16
-    reg: array[8, uint16]
+    ip: Vnum
+    reg: Reg
 
-const RegStart: uint16 = uint16(2^15)
+const NumMax: uint16 = uint16(2^15)
+
+proc `+`[T: SomeInteger](x: Vnum, y: T): Vnum =
+  result = Vnum((uint16(x) + uint16(y)) mod NumMax)
+
+proc `+=`[T: SomeInteger](x: var Vnum, y: T) =
+  x = x + y
+
+proc `==`[T: SomeInteger](x: Vnum, y: T): bool =
+  result = T(x) == y
+
+proc `[]`(m: Mem, i: Vnum): uint16 =
+  return m[uint16(i)]
+
+proc `[]`(r: Reg, i: Regidx): Vnum =
+  return r[uint16(i)]
+
+proc `[]=`(r: var Reg, i: Regidx, v: Vnum) =
+  r[uint16(i)] = v
 
 proc loadCode(v: VM) =
   let f = open("../challenge.bin", )
@@ -18,13 +39,12 @@ proc loadCode(v: VM) =
   echo "Read ", n, " bytes"
 
 proc val(v: VM, offset: uint16 = 0): auto =
-  result = v.mem[v.ip + offset]
-  #echo "get ", result
-  if result >= RegStart + 8:
+  var res = v.mem[v.ip + offset]
+  if res >= NumMax + 8:
     raise newException(ValueError, "arg too big")
-  if result >= RegStart:
-    result = v.reg[result - RegStart]
-    #echo "in register ", result
+  if res >= NumMax:
+    res = uint16(v.reg[Regidx(res - NumMax)])
+  return Vnum(res)
 
 proc arg1(v: VM): auto =
   result = v.val
@@ -38,8 +58,8 @@ proc arg3(v: VM): auto =
   result = (v.val, v.val(1), v.val(2))
   v.ip += 3
 
-proc regarg(v: VM): auto =
-  result = (v.mem[v.ip] - RegStart, v.val(1))
+proc set1(v: VM): auto =
+  result = (Regidx(v.mem[v.ip] - NumMax), v.val(1))
   v.ip += 2
 
 proc run(v: VM) =
@@ -66,8 +86,7 @@ proc run(v: VM) =
       if test == 0:
         v.ip = dest
     of Set:
-      let (reg, val) = v.regarg
-      #echo "set ", reg, " to ", val
+      let (reg, val) = v.set1
       v.reg[reg] = val
     else:
       echo "\nunknown instruction ", op
