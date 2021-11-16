@@ -6,22 +6,26 @@ type
   Mem = array[2^15, uint16]
   Reg = array[8, Vnum]
   Op = enum
-    Halt = 0, Set = 1, Jmp = 6, Jt = 7, Jf = 8, Add = 9, Out = 19, Noop = 21
+    Halt = 0, Set = 1, Push = 2, Pop = 3, Eq = 4, Gt = 5, Jmp = 6, Jt = 7, Jf = 8, Add = 9, Out = 19, Noop = 21
   VM = ref object
     mem: Mem
     ip: Vnum
     reg: Reg
+    stack: seq[Vnum]
 
 const NumMax: uint16 = uint16(2^15)
 
-proc `+`[T: SomeInteger](x: Vnum, y: T): Vnum =
+proc `+`[T](x: Vnum, y: T): Vnum =
   result = Vnum((uint16(x) + uint16(y)) mod NumMax)
 
-proc `+=`[T: SomeInteger](x: var Vnum, y: T) =
+proc `+=`[T](x: var Vnum, y: T) =
   x = x + y
 
-proc `==`[T: SomeInteger](x: Vnum, y: T): bool =
-  result = T(x) == y
+proc `>`(x: Vnum, y: Vnum): bool =
+  return uint16(x) > uint16(y)
+
+proc `==`[T](x: Vnum, y: T): bool =
+  result = uint16(x) == uint16(y)
 
 proc `[]`(m: Mem, i: Vnum): uint16 =
   return m[uint16(i)]
@@ -29,8 +33,8 @@ proc `[]`(m: Mem, i: Vnum): uint16 =
 proc `[]`(r: Reg, i: Regidx): Vnum =
   return r[uint16(i)]
 
-proc `[]=`(r: var Reg, i: Regidx, v: Vnum) =
-  r[uint16(i)] = v
+proc `[]=`[T](r: var Reg, i: Regidx, v: T) =
+  r[uint16(i)] = Vnum(v)
 
 proc loadCode(v: VM) =
   let f = open("../challenge.bin", )
@@ -54,13 +58,17 @@ proc arg2(v: VM): auto =
   result = (v.val, v.val(1))
   v.ip += 2
 
-proc arg3(v: VM): auto =
-  result = (v.val, v.val(1), v.val(2))
-  v.ip += 3
+proc set(v: VM): auto =
+  result = Regidx(v.mem[v.ip] - NumMax)
+  v.ip += 1
 
 proc set1(v: VM): auto =
   result = (Regidx(v.mem[v.ip] - NumMax), v.val(1))
   v.ip += 2
+
+proc set2(v: VM): auto =
+  result = (Regidx(v.mem[v.ip] - NumMax), v.val(1), v.val(2))
+  v.ip += 3
 
 proc run(v: VM) =
   while true:
@@ -88,6 +96,27 @@ proc run(v: VM) =
     of Set:
       let (reg, val) = v.set1
       v.reg[reg] = val
+    of Add:
+      let (reg, x, y) = v.set2
+      v.reg[reg] = x + y
+    of Eq:
+      let (reg, x, y) = v.set2
+      if x == y:
+        v.reg[reg] = 1
+      else:
+        v.reg[reg] = 0
+    of Push:
+      let val = v.arg1
+      v.stack.add(val)
+    of Pop:
+      let reg = v.set
+      v.reg[reg] = v.stack.pop
+    of Gt:
+      let (reg, x, y) = v.set2
+      if x > y:
+        v.reg[reg] = 1
+      else:
+        v.reg[reg] = 0
     else:
       echo "\nunknown instruction ", op
       return
