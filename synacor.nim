@@ -6,7 +6,7 @@ type
   Mem = array[2^15, uint16]
   Reg = array[8, Vnum]
   Op = enum
-    Halt = 0, Set = 1, Push = 2, Pop = 3, Eq = 4, Gt = 5, Jmp = 6, Jt = 7, Jf = 8, Add = 9, Out = 19, Noop = 21
+    Halt = 0, Set = 1, Push = 2, Pop = 3, Eq = 4, Gt = 5, Jmp = 6, Jt = 7, Jf = 8, Add = 9, Mult = 10, Mod = 11, And = 12, Or = 13, Not = 14, Rmem = 15, Wmem = 16, Call = 17, Ret = 18, Out = 19, In = 20, Noop = 21
   VM = ref object
     mem: Mem
     ip: Vnum
@@ -16,19 +16,37 @@ type
 const NumMax: uint16 = uint16(2^15)
 
 proc `+`[T](x: Vnum, y: T): Vnum =
-  result = Vnum((uint16(x) + uint16(y)) mod NumMax)
+  return Vnum((uint16(x) + uint16(y)) mod NumMax)
 
 proc `+=`[T](x: var Vnum, y: T) =
   x = x + y
 
+proc `*`(x: Vnum, y: Vnum): Vnum =
+  return Vnum((uint16(x) * uint16(y)) mod NumMax)
+
+proc `mod`(x: Vnum, y: Vnum): Vnum =
+  return Vnum(uint16(x) mod uint16(y))
+
 proc `>`(x: Vnum, y: Vnum): bool =
   return uint16(x) > uint16(y)
 
+proc `and`(x: Vnum, y: Vnum): Vnum =
+  return Vnum(uint16(x) and uint16(y))
+
+proc `or`(x: Vnum, y: Vnum): Vnum =
+  return Vnum(uint16(x) or uint16(y))
+
+proc `not`(x: Vnum): Vnum =
+  return Vnum(uint16(x) xor uint16((2^15)-1))
+
 proc `==`[T](x: Vnum, y: T): bool =
-  result = uint16(x) == uint16(y)
+  return uint16(x) == uint16(y)
 
 proc `[]`(m: Mem, i: Vnum): uint16 =
   return m[uint16(i)]
+
+proc `[]=`(m: var Mem, i: Vnum, v: Vnum) =
+  m[uint16(i)] = uint16(v)
 
 proc `[]`(r: Reg, i: Regidx): Vnum =
   return r[uint16(i)]
@@ -72,7 +90,11 @@ proc set2(v: VM): auto =
 
 proc run(v: VM) =
   while true:
-    let op = Op(v.mem[v.ip])
+    let ov = v.mem[v.ip]
+    if ov > 21:
+      echo "Bad instruction ", ov
+      return
+    let op = Op(ov)
     v.ip += 1
     case op
     of Halt:
@@ -117,8 +139,40 @@ proc run(v: VM) =
         v.reg[reg] = 1
       else:
         v.reg[reg] = 0
+    of And:
+      let (reg, x, y) = v.set2
+      v.reg[reg] = x and y
+    of Or:
+      let (reg, x, y) = v.set2
+      v.reg[reg] = x or y
+    of Not:
+      let (reg, x) = v.set1
+      v.reg[reg] = not x
+    of Call:
+      let dest = v.arg1
+      let next = v.ip
+      v.stack.add(next)
+      v.ip = dest
+    of Mult:
+      let (reg, x, y) = v.set2
+      v.reg[reg] = x * y
+    of Mod:
+      let (reg, x, y) = v.set2
+      v.reg[reg] = x mod y
+    of Rmem:
+      let (reg, x) = v.set1
+      v.reg[reg] = v.mem[x]
+    of Wmem:
+      let (dest, x) = v.arg2
+      v.mem[dest] = x
+    of Ret:
+      if v.stack.len == 0:
+        echo "\nRet on empty stack, exiting"
+        return
+      v.ip = v.stack.pop
+
     else:
-      echo "\nunknown instruction ", op
+      echo "\nUnhandled op ", op
       return
 
 var vm = VM()
